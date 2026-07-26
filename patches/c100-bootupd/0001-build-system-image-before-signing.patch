@@ -1,0 +1,19 @@
+diff --git a/Makefile b/Makefile
+--- a/Makefile
++++ b/Makefile
+@@ -78,7 +78,14 @@ $(SRC-DOC)/VERSION: $(SRC-DOC)
+ 	dpkg-parsechangelog -S Version > "$@"
+ 
++SYSTEM_IMG := Linux_for_Tegra/bootloader/system.img
++
++$(SYSTEM_IMG): replace-u-boot
++	cd Linux_for_Tegra && \
++	sudo ./flash.sh --no-flash jetson-nano-emmc mmcblk0p1
++	test -s "$@"
++
+ .PHONY: build-signed
+-build-signed: replace-u-boot
++build-signed: replace-u-boot $(SYSTEM_IMG)
+ 	cd Linux_for_Tegra && \
+ 	sudo ./flash.sh --sign -r --no-flash jetson-nano-emmc mmcblk0p1
+ 

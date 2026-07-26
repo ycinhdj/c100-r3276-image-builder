@@ -1,0 +1,20 @@
+name: Quality
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Run repository checks
+        run: bash ./scripts/check.sh
+      - name: Validate pinned upstream adaptation
+        run: bash ./scripts/check-upstream-patch.sh

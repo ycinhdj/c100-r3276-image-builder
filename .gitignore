@@ -1,0 +1,15 @@
+# Downloaded NVIDIA archives
+downloads/*
+!downloads/.gitkeep
+!downloads/README.md
+
+# Generated images and checksums
+output/*
+!output/.gitkeep
+
+# Temporary files
+*.part
+*.tmp
+*.log
+.DS_Store
+*~
