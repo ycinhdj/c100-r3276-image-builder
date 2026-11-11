@@ -44,10 +44,6 @@ hash_stream() {
     sha256sum | awk '{print $1}'
 }
 
-hash_files() {
-    sha256sum "$@" | hash_stream
-}
-
 utc_timestamp() {
     local epoch="${SOURCE_DATE_EPOCH:-}"
     if [[ -n "$epoch" ]]; then

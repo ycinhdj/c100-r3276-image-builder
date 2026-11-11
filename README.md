@@ -1,127 +1,139 @@
 # OKdo Nano C100 Jetson Linux R32.7.6 image builder
 
-Build a bootable Jetson Linux R32.7.6 microSD image for the **OKdo Nano C100**
-from pinned upstream source revisions and official NVIDIA release archives.
+One command that builds a bootable **Jetson Linux R32.7.6 (JetPack 4.6.6)**
+microSD image for the **OKdo Nano C100**.
 
-The generated image contains:
+This project is built on top of
+[**LetsOKdo/c100-bootupd**](https://github.com/LetsOKdo/c100-bootupd), the
+original C100 bootloader and image tooling. All of the hard, board-specific work
+comes from that repository: the patched U-Boot with SDMMC3 support, the
+device-tree overlays, the PCN211181 memory fix and the first-boot bootloader
+updater. This builder automates that work and makes it repeatable. See
+[Credits](#credits).
 
-- C100 U-Boot support for the SDMMC3 microSD interface;
-- the PCN211181 memory overlay;
-- C100 boot-control configuration and device-tree overlays;
-- a first-boot service that installs the required bootloader content in eMMC;
-- SHA-256 checksums for the raw and compressed image artifacts.
+## What this adds over the original
 
-NVIDIA binaries are not distributed by this repository. The builder downloads
-them from NVIDIA after explicit license acceptance.
+The original repository documents a manual workflow: download four NVIDIA
+archives by hand, run `init-jetpack`, then `make deb` / `make image`. Its
+`make image` target patches the older **JetPack 4.6.1** SD card image (which has
+to be downloaded separately) and assumes the image maps to `/dev/mapper/loop0`.
 
-## Host requirements
+This builder:
 
-- x86-64 Ubuntu;
-- Ubuntu 20.04 for the host configuration recommended by NVIDIA for Jetson
-  Linux R32;
-- at least 50 GB of free space on a Linux filesystem;
-- `sudo` access for package installation, target-rootfs preparation, loop
-  devices, mounting, and image creation.
+- **builds the whole image from R32.7.6.** The image is created with NVIDIA's
+  `jetson-disk-image-creator.sh` from the same BSP and root filesystem the
+  bootloader is built from, so the bootloader and the OS are the same version;
+- **downloads the NVIDIA archives automatically**, with resumable downloads,
+  validation and a SHA-256 manifest. You must accept NVIDIA's license with a flag
+  before anything is downloaded;
+- **pins the upstream commits** (`c100-bootupd` and its U-Boot base) in
+  [`config/release.env`](config/release.env);
+- **keeps two small fixes as patches** instead of forking the upstream code (see
+  [Patches](#patches-to-upstream));
+- **caches build stages** (BSP preparation, U-Boot, updater package) based on
+  their inputs, so rebuilds are fast and stale results are never reused;
+- **uses a free loop device and cleans up mounts** instead of assuming a fixed
+  one;
+- **outputs a compressed `.img.xz` with checksums**.
 
-The repository, build workspace, and output directory must be on a filesystem
-that supports Unix ownership, permissions, and symbolic links.
+NVIDIA binaries are not redistributed. They are downloaded from NVIDIA at build
+time.
 
-## Build an image
+## Requirements
+
+- An x86-64 Ubuntu host. 20.04 is recommended, since that is NVIDIA's reference
+  host for R32.
+- At least 50 GB of free space on a Linux filesystem (not NTFS, exFAT or a WSL
+  `/mnt/c` path).
+- `sudo` access. Run the builder as a normal user; it uses `sudo` only when it
+  needs to.
+
+## Build
 
 ```bash
+git clone https://github.com/ycinhdj/c100-r3276-image-builder.git
 cd c100-r3276-image-builder
 bash ./build.sh --accept-nvidia-license --install-deps --clean
 ```
 
-Run the builder as a normal user. It invokes `sudo` only for operations that
-require elevated privileges.
-
-Build artifacts are written to `output/`:
+Output in `output/`:
 
 ```text
-output/
-├── c100-jetson-linux-r32.7.6.img
-├── c100-jetson-linux-r32.7.6.img.sha256
-├── c100-jetson-linux-r32.7.6.img.xz
-└── c100-jetson-linux-r32.7.6.img.xz.sha256
+c100-jetson-linux-r32.7.6.img          (omit with --no-raw)
+c100-jetson-linux-r32.7.6.img.sha256
+c100-jetson-linux-r32.7.6.img.xz
+c100-jetson-linux-r32.7.6.img.xz.sha256
 ```
 
-Verify the compressed artifact:
+Flash the `.img.xz` with any image writer that handles XZ (balenaEtcher,
+Raspberry Pi Imager, `xzcat … | sudo dd …`).
 
-```bash
-cd output
-sha256sum -c c100-jetson-linux-r32.7.6.img.xz.sha256
-```
+Other useful options (`bash ./build.sh --help` lists all of them):
 
-Flash `c100-jetson-linux-r32.7.6.img.xz` with a disk-image writer that supports
-XZ-compressed images.
+| Option | Effect |
+| --- | --- |
+| `--download-only` | Fetch and validate the NVIDIA archives, then stop. |
+| `--skip-download` | Build offline from archives already in `downloads/`. |
+| `--prepare-only` | Prepare the BSP and updater package without making an image. |
+| `--no-raw` | Keep only the compressed image. |
+| `--jobs N`, `--work-dir`, `--downloads`, `--output` | Tune parallelism and paths. |
 
 ## First boot
 
-1. Insert the flashed microSD card into the C100.
-2. Power on the board and leave it powered while the bootloader installer runs.
-3. Wait until the board powers off completely.
-4. Power it on again with the same microSD card inserted.
-5. Complete the Ubuntu first-boot setup.
+1. Insert the card and power on. A first-boot service writes the C100
+   bootloader into eMMC.
+2. Wait until the board **powers itself off**. Do not cut power before then.
+3. Power on again and complete the Ubuntu setup.
 
-The installer writes the C100 bootloader content required for microSD boot to
-eMMC. It does not replace the eMMC root filesystem. The operating system built
-by this workflow runs from the microSD card.
+The OS runs from microSD. Only the bootloader content in eMMC is changed. To
+completely reinstall eMMC over USB recovery mode, see
+[`docs/EMMC.md`](docs/EMMC.md).
 
-See [`docs/EMMC.md`](docs/EMMC.md) for a complete eMMC reinstall through USB
-recovery mode.
+> Only for the OKdo Nano C100 / Jetson Nano (T210). Back up eMMC data first.
 
-## Build options
+## How it works
 
-Download and validate the NVIDIA archives:
-
-```bash
-bash ./build.sh --accept-nvidia-license --install-deps --download-only
+```text
+build.sh            entry point and options
+config/release.env  pinned versions, commits, archive names and URLs
+lib/host.sh         host checks, dependencies, ARM64 emulation (qemu/binfmt)
+lib/downloads.sh    NVIDIA archive download and validation
+lib/upstream.sh     pinned c100-bootupd checkout, patches, BSP, U-Boot, .deb
+lib/image.sh        SD image creation, C100 payload install, compression
+patches/            patches applied to the pinned c100-bootupd commit
+scripts/check.sh    shellcheck + checks that the patches still apply (used by CI)
 ```
 
-Prepare the Jetson Linux tree and updater package without creating an image:
+The pipeline: validate the host, download the archives, check out
+`c100-bootupd` at the pinned commit and apply the patches, run its
+`init-jetpack`, build the patched U-Boot and the signed `c100-bootupd` package,
+create the SD image with NVIDIA's tool, then install the updater, boot-control
+config and overlays into the image.
 
-```bash
-bash ./build.sh --accept-nvidia-license --install-deps --clean --prepare-only
-```
+### Patches to upstream
 
-Build from archives already stored in `downloads/`:
+- `0001-build-system-image-before-signing.patch`: generates `system.img`
+  before the signing step, which otherwise fails on a fresh tree.
+- `0002-refresh-gpl-license-reference.patch`: updates the GPL address in
+  `debian/copyright` so current Debian packaging checks pass.
 
-```bash
-bash ./build.sh --skip-download --clean
-```
+Both are small enough to send upstream.
 
-Keep only the compressed image:
+## Credits
 
-```bash
-bash ./build.sh --accept-nvidia-license --install-deps --clean --no-raw
-```
+Thanks to the people who did the original work:
 
-Show all command-line options:
-
-```bash
-bash ./build.sh --help
-```
-
-## Repository structure
-
-Pinned versions, commits, archive names, and URLs are declared in
-[`config/release.env`](config/release.env). Build logic is separated into the
-modules under [`lib/`](lib/). Source changes required by the pinned
-`c100-bootupd` revision are maintained as an ordered patch series under
-[`patches/c100-bootupd/`](patches/c100-bootupd/).
-
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the build design.
-
-## Safety
-
-- Use only with the OKdo Nano C100 / Jetson Nano generation.
-- Do not use the generated image on a Jetson Orin device.
-- Back up important eMMC data before the first boot.
-- Do not interrupt power while bootloader content is being written.
-- A complete eMMC flash is destructive and requires USB recovery mode.
+- **ZHANG Yuntian ([Radxa](https://radxa.com))**, author of
+  [`c100-bootupd`](https://github.com/LetsOKdo/c100-bootupd): the U-Boot
+  patches, SDMMC3 and PCN211181 device-tree overlays, the boot-control setup and
+  the bootloader updater this image depends on.
+- **[OKdo / LetsOKdo](https://github.com/LetsOKdo)**, for publishing and
+  maintaining the C100 bootloader project.
+- **Adis Veletanlic**, for build fixes contributed to `c100-bootupd`.
+- **NVIDIA**, for Jetson Linux and the L4T tools.
 
 ## License
 
-The builder is released under the MIT License. NVIDIA archives and upstream
-components remain subject to their respective licenses.
+The builder scripts are released under the [MIT License](LICENSE).
+`c100-bootupd` and the patches in `patches/c100-bootupd/` (which modify it) are
+GPL-3.0-or-later. NVIDIA archives remain under NVIDIA's license terms.

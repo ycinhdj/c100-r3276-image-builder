@@ -20,6 +20,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-This builder clones and builds the separate LetsOKdo/c100-bootupd project,
-which remains governed by its own GPL-3.0 license. NVIDIA archives and binaries
-remain governed by NVIDIA's applicable license terms.
+This license covers the builder scripts in this repository. The builder
+clones and builds the separate LetsOKdo/c100-bootupd project, which is licensed
+under GPL-3.0-or-later; the patches in patches/c100-bootupd/ modify that project
+and are distributed under the same GPL-3.0-or-later terms. NVIDIA archives and
+binaries remain governed by NVIDIA's applicable license terms.

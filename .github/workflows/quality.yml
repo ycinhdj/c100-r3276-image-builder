@@ -16,5 +16,3 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Run repository checks
         run: bash ./scripts/check.sh
-      - name: Validate pinned upstream adaptation
-        run: bash ./scripts/check-upstream-patch.sh

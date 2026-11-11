@@ -28,9 +28,9 @@ install_host_dependencies() {
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
         bc binfmt-support bison build-essential bzip2 ca-certificates cpio curl \
         crossbuild-essential-arm64 debhelper devscripts device-tree-compiler \
-        dosfstools e2fsprogs fakeroot flex gdisk git kpartx lbzip2 \
+        dosfstools e2fsprogs fakeroot flex gdisk git lbzip2 \
         libncurses-dev libssl-dev libxml2-utils lintian parted pandoc \
-        pkg-config python3 python-is-python3 "$qemu_package" rsync shellcheck \
+        pkg-config python3 python-is-python3 "$qemu_package" rsync \
         sudo u-boot-tools unzip util-linux uuid-runtime xz-utils zlib1g-dev
 }
 

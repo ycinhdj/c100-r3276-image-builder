@@ -1,7 +1,6 @@
 # Downloaded NVIDIA archives
 downloads/*
 !downloads/.gitkeep
-!downloads/README.md
 
 # Generated images and checksums
 output/*
