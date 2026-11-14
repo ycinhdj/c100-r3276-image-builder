@@ -60,6 +60,11 @@ jobs:
           sudo chown "$(id -u):$(id -g)" "$BUILD_ROOT"
           df -h / /mnt
 
+      - name: Register ARM64 emulation
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
       - name: Run the static checks
         run: |
           sudo apt-get update

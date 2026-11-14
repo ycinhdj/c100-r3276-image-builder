@@ -91,14 +91,22 @@ prepare_arm64_emulator() {
     ok "ARM64 QEMU emulator: $QEMU_SOURCE_BIN"
 }
 
-ensure_arm64_binfmt() {
-    sudo systemctl restart systemd-binfmt.service >/dev/null 2>&1 || \
-        sudo update-binfmts --enable qemu-aarch64 >/dev/null 2>&1 || true
+arm64_binfmt_is_active() {
+    [[ -e /proc/sys/fs/binfmt_misc/qemu-aarch64 || \
+       -e /proc/sys/fs/binfmt_misc/qemu-aarch64-static ]]
+}
 
-    if [[ -e /proc/sys/fs/binfmt_misc/qemu-aarch64 || \
-          -e /proc/sys/fs/binfmt_misc/qemu-aarch64-static ]]; then
-        ok "ARM64 binfmt registration is active"
-    else
-        warn "ARM64 binfmt registration is not visible; NVIDIA's target-rootfs package installation may fail."
+ensure_arm64_binfmt() {
+    if ! arm64_binfmt_is_active; then
+        [[ -e /proc/sys/fs/binfmt_misc/register ]] || \
+            sudo mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc >/dev/null 2>&1 || true
+        sudo systemctl restart systemd-binfmt.service >/dev/null 2>&1 || true
+        arm64_binfmt_is_active || \
+            sudo update-binfmts --enable qemu-aarch64 >/dev/null 2>&1 || true
     fi
+
+    arm64_binfmt_is_active || die "ARM64 binfmt registration is not active, so NVIDIA's packages cannot be installed into the root filesystem.
+Install qemu-user-static and binfmt-support (--install-deps), or register the emulator with:
+  docker run --privileged --rm tonistiigi/binfmt --install arm64"
+    ok "ARM64 binfmt registration is active"
 }
