@@ -1,0 +1,170 @@
+name: Release
+
+# Builds the microSD image on a GitHub runner and publishes it as a GitHub
+# Release. Run it by pushing a tag that matches PROJECT_VERSION
+# (config/release.env), e.g. v1.0.0, or start it by hand from the Actions tab.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (must be v + PROJECT_VERSION, e.g. v1.0.0)'
+        required: true
+      draft:
+        description: 'Create the release as a draft'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      BUILD_ROOT: /mnt/c100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the tag against the builder version
+        run: |
+          source config/release.env
+          [[ "$TAG" == "v$PROJECT_VERSION" ]] || {
+            echo "::error::Tag $TAG does not match PROJECT_VERSION $PROJECT_VERSION in config/release.env"
+            exit 1
+          }
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Release $TAG already exists. Delete it or bump PROJECT_VERSION."
+            exit 1
+          fi
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          sudo mkdir -p "$BUILD_ROOT"
+          sudo chown "$(id -u):$(id -g)" "$BUILD_ROOT"
+          df -h / /mnt
+
+      - name: Run the static checks
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          bash ./scripts/check.sh
+
+      - name: Build the image
+        run: |
+          bash ./build.sh --accept-nvidia-license --install-deps --clean --no-raw \
+            --work-dir "$BUILD_ROOT/work" \
+            --downloads "$BUILD_ROOT/downloads" \
+            --output "$BUILD_ROOT/output"
+          df -h / /mnt
+
+      - name: Prepare release assets
+        run: |
+          source config/release.env
+          out="$BUILD_ROOT/output"
+          assets="$BUILD_ROOT/assets"
+          mkdir -p "$assets"
+          # Free the build workspace before copying anything large.
+          sudo rm -rf --one-file-system "$BUILD_ROOT/work"
+
+          mv "$out/$IMAGE_NAME.xz" "$out/$IMAGE_NAME.xz.sha256" "$assets/"
+          [[ -f "$out/$IMAGE_NAME.sha256" ]] && mv "$out/$IMAGE_NAME.sha256" "$assets/"
+          cp "$BUILD_ROOT/downloads/downloaded-files.sha256" "$assets/nvidia-archives.sha256"
+          curl -fsSL "$NVIDIA_LICENSE_PAGE" -o "$assets/NVIDIA-Tegra-Software-License-Agreement.txt"
+
+          # GitHub release assets are limited to 2 GiB each.
+          size=$(stat -c %s "$assets/$IMAGE_NAME.xz")
+          echo "Compressed image: $size bytes"
+          if (( size > 2000 * 1024 * 1024 )); then
+            (cd "$assets" && split -b 1900M -d -a 2 "$IMAGE_NAME.xz" "$IMAGE_NAME.xz.part" \
+              && rm "$IMAGE_NAME.xz")
+            echo "SPLIT=1" >> "$GITHUB_ENV"
+          fi
+          ls -l "$assets"
+
+      - name: Write release notes
+        run: |
+          source config/release.env
+          assets="$BUILD_ROOT/assets"
+          xz_sha=$(awk '{print $1}' "$assets/$IMAGE_NAME.xz.sha256")
+          raw_sha=$(awk '{print $1}' "$assets/$IMAGE_NAME.sha256" 2>/dev/null || true)
+          if [[ "${SPLIT:-0}" == 1 ]]; then
+            get="The image is split into parts because of GitHub's 2 GiB file limit. Download every \`$IMAGE_NAME.xz.partNN\` file, then join them:
+
+          \`\`\`bash
+          cat $IMAGE_NAME.xz.part* > $IMAGE_NAME.xz
+          sha256sum -c $IMAGE_NAME.xz.sha256
+          \`\`\`
+
+          On Windows: \`copy /b $IMAGE_NAME.xz.part00 + $IMAGE_NAME.xz.part01 $IMAGE_NAME.xz\` (list every part in order)."
+          else
+            get="Download \`$IMAGE_NAME.xz\` and check it:
+
+          \`\`\`bash
+          sha256sum -c $IMAGE_NAME.xz.sha256
+          \`\`\`"
+          fi
+          cat > "$BUILD_ROOT/notes.md" <<NOTES
+          Bootable **Jetson Linux $JETSON_LINUX_RELEASE (JetPack $JETPACK_RELEASE)** microSD image for the **OKdo Nano C100**, built by GitHub Actions from commit ${GITHUB_SHA:0:7} with \`build.sh\`.
+
+          ## Download
+
+          $get
+
+          Flash the \`.img.xz\` with balenaEtcher, Raspberry Pi Imager or \`xzcat $IMAGE_NAME.xz | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress\`.
+
+          | File | SHA-256 |
+          | --- | --- |
+          | \`$IMAGE_NAME.xz\` | \`$xz_sha\` |
+          | \`$IMAGE_NAME\` (uncompressed) | \`${raw_sha:-n/a}\` |
+
+          ## First boot
+
+          1. Insert the card and power on. A first-boot service writes the C100 bootloader into eMMC.
+          2. Wait until the board **powers itself off**. Do not cut power before then.
+          3. Power on again and complete the Ubuntu setup.
+
+          > Only for the OKdo Nano C100 / Jetson Nano (T210). Back up eMMC data first.
+
+          ## Contents
+
+          - NVIDIA Jetson Linux $JETSON_LINUX_RELEASE BSP and sample root filesystem, with the PCN211181 overlay (\`nvidia-archives.sha256\` lists the exact archives).
+          - [c100-bootupd](https://github.com/LetsOKdo/c100-bootupd) $C100_BOOTUPD_VERSION at \`${C100_BOOTUPD_COMMIT:0:12}\` (GPL-3.0-or-later) with the patches in \`patches/c100-bootupd/\`, by ZHANG Yuntian (Radxa) and LetsOKdo.
+
+          ## License
+
+          This image contains NVIDIA software distributed under the **NVIDIA Tegra Software License Agreement**, attached as \`NVIDIA-Tegra-Software-License-Agreement.txt\`. By downloading or using the image you agree to its terms. NVIDIA binaries are unmodified. Files changed or added by this builder in the root filesystem:
+
+          - \`/boot/extlinux/extlinux.conf\`: root device set to \`/dev/mmcblk0p1\`;
+          - added: the \`c100-bootupd\` package, its systemd units, \`/etc/nv_boot_control.conf\`, \`nv_boot_control.service\`, two C100 device-tree overlays in \`/boot\`, \`/u-boot-preboot.scr\` and \`/etc/c100-image-release\`.
+
+          Other components keep their own licenses (Ubuntu packages, GPL-3.0-or-later for c100-bootupd). The builder scripts are MIT.
+          NOTES
+          cat "$BUILD_ROOT/notes.md"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRAFT: ${{ github.event.inputs.draft || 'false' }}
+        run: |
+          source config/release.env
+          flags=(--title "C100 Jetson Linux $JETSON_LINUX_RELEASE image $TAG" --notes-file "$BUILD_ROOT/notes.md")
+          [[ "$DRAFT" == true ]] && flags+=(--draft)
+          git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || flags+=(--target "$GITHUB_SHA")
+          gh release create "$TAG" "${flags[@]}" "$BUILD_ROOT"/assets/*

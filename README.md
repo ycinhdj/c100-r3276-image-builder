@@ -36,8 +36,18 @@ This builder:
   one;
 - **outputs a compressed `.img.xz` with checksums**.
 
-NVIDIA binaries are not redistributed. They are downloaded from NVIDIA at build
-time.
+The repository itself contains no NVIDIA files. The builder downloads them from
+NVIDIA at build time. Release images include them unmodified, as NVIDIA's
+license allows, with the license agreement attached.
+
+## Download a prebuilt image
+
+Ready-made images are published on the
+[Releases](https://github.com/ycinhdj/c100-r3276-image-builder/releases) page.
+They are built by GitHub Actions
+([`release.yml`](.github/workflows/release.yml)) with the same command as
+below, and include SHA-256 checksums and NVIDIA's license agreement, which
+applies to the NVIDIA software in the image. To build it yourself, read on.
 
 ## Requirements
 
@@ -59,7 +69,7 @@ bash ./build.sh --accept-nvidia-license --install-deps --clean
 Output in `output/`:
 
 ```text
-c100-jetson-linux-r32.7.6.img          (omit with --no-raw)
+c100-jetson-linux-r32.7.6.img          (omitted with --no-raw)
 c100-jetson-linux-r32.7.6.img.sha256
 c100-jetson-linux-r32.7.6.img.xz
 c100-jetson-linux-r32.7.6.img.xz.sha256
@@ -102,6 +112,8 @@ lib/upstream.sh     pinned c100-bootupd checkout, patches, BSP, U-Boot, .deb
 lib/image.sh        SD image creation, C100 payload install, compression
 patches/            patches applied to the pinned c100-bootupd commit
 scripts/check.sh    shellcheck + checks that the patches still apply (used by CI)
+.github/workflows/  quality.yml (checks on every push), release.yml (builds and
+                    publishes the image for a v* tag)
 ```
 
 The pipeline: validate the host, download the archives, check out

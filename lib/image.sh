@@ -109,7 +109,7 @@ create_sd_image() {
     )
 
     if ((KEEP_RAW == 0)); then
-        rm -f -- "$RAW_IMAGE" "$RAW_IMAGE.sha256"
+        rm -f -- "$RAW_IMAGE"
     fi
 
     [[ -s "$XZ_IMAGE" && -s "$XZ_IMAGE.sha256" ]] || die "Compressed image output is incomplete."
