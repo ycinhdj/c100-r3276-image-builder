@@ -1,7 +1,7 @@
 # OKdo Nano C100 Jetson Linux R32.7.6 image builder
 
-One command that builds a bootable **Jetson Linux R32.7.6 (JetPack 4.6.6)**
-microSD image for the **OKdo Nano C100**.
+One command that builds a bootable **Jetson Linux R32.7.6** (Ubuntu 18.04, the
+base of JetPack 4.6.6) microSD image for the **OKdo Nano C100**.
 
 This project is built on top of
 [**LetsOKdo/c100-bootupd**](https://github.com/LetsOKdo/c100-bootupd), the
@@ -101,6 +101,27 @@ completely reinstall eMMC over USB recovery mode, see
 
 > Only for the OKdo Nano C100 / Jetson Nano (T210). Back up eMMC data first.
 
+### Installing JetPack
+
+The image is built from NVIDIA's sample root filesystem, so it contains Jetson
+Linux (kernel, drivers, GPU support and NVIDIA's apt sources) but not the
+JetPack SDK components that NVIDIA's own SD card image ships with (CUDA 10.2,
+cuDNN, TensorRT, VPI, DeepStream). Install them after the first boot:
+
+```bash
+sudo apt update
+sudo apt install nvidia-jetpack
+```
+
+JetPack 4.6.x on Ubuntu 18.04 is the last release NVIDIA made for the Jetson
+Nano.
+
+### microSD and eMMC together
+
+The bootloader tries the microSD card first, then eMMC. To keep a system on
+both, choose which one starts, or keep the system on eMMC and use the card for
+data, see [`docs/BOOT-ORDER.md`](docs/BOOT-ORDER.md).
+
 ## How it works
 
 ```text
@@ -111,6 +132,7 @@ lib/downloads.sh    NVIDIA archive download and validation
 lib/upstream.sh     pinned c100-bootupd checkout, patches, BSP, U-Boot, .deb
 lib/image.sh        SD image creation, C100 payload install, compression
 patches/            patches applied to the pinned c100-bootupd commit
+docs/               EMMC.md (full eMMC reinstall), BOOT-ORDER.md (microSD vs eMMC)
 scripts/check.sh    shellcheck + checks that the patches still apply (used by CI)
 .github/workflows/  quality.yml (checks on every push), release.yml (builds and
                     publishes the image for a v* tag)

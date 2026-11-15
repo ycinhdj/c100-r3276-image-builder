@@ -126,7 +126,7 @@ jobs:
           \`\`\`"
           fi
           cat > "$BUILD_ROOT/notes.md" <<NOTES
-          Bootable **Jetson Linux $JETSON_LINUX_RELEASE (JetPack $JETPACK_RELEASE)** microSD image for the **OKdo Nano C100**, built by GitHub Actions from commit ${GITHUB_SHA:0:7} with \`build.sh\`.
+          Bootable **Jetson Linux $JETSON_LINUX_RELEASE** (Ubuntu 18.04, the base of JetPack $JETPACK_RELEASE) microSD image for the **OKdo Nano C100**, built by GitHub Actions from commit ${GITHUB_SHA:0:7} with \`build.sh\`.
 
           ## Download
 
@@ -146,6 +146,8 @@ jobs:
           3. Power on again and complete the Ubuntu setup.
 
           > Only for the OKdo Nano C100 / Jetson Nano (T210). Back up eMMC data first.
+
+          The JetPack SDK components (CUDA, cuDNN, TensorRT, VPI, DeepStream) are not preinstalled. Add them after the first boot with \`sudo apt update && sudo apt install nvidia-jetpack\`. The microSD card boots before eMMC; see [docs/BOOT-ORDER.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/BOOT-ORDER.md) to run a system from eMMC, from microSD or both.
 
           ## Contents
 
